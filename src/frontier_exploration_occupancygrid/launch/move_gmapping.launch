@@ -55,7 +55,7 @@
         
         <param name="base_local_planner" value="eband_local_planner/EBandPlannerROS" />
         <param name="base_global_planner" value="navfn/NavfnROS" />
-        <param name="NavfnROS/allow_unknown" value="false"/>
+        <param name="NavfnROS/allow_unknown" value="true"/>
     </node>
 
 </launch>
