@@ -8,7 +8,7 @@
    
     <!-- Open simulation environment -->
     <include file="$(find gazebo_ros)/launch/empty_world.launch">
-        <arg name="world_name" value="$(find frontier_exploration)\world\house.world"/>
+        <arg name="world_name" value="$(find frontier_exploration)/world/house.world"/>
         <arg name="use_sim_time" value="true"/>
         <arg name="gui" value="false"/>
         <arg name="debug" value="false"/>
@@ -31,9 +31,9 @@
         <param name="rotate_speed" value="0.5"/>
     </node>
 
-    <!-- <include file="$(find frontier_exploration)/launch/move_gmapping.launch"/> -->
-    <include file="$(find frontier_exploration)/launch/move_cartographer.launch"/>
+    <include file="$(find frontier_exploration)/launch/move_gmapping.launch"/>
+    <!-- <include file="$(find frontier_exploration)/launch/move_cartographer.launch"/> -->
     <!-- Open Rviz -->
-    <!-- <node name="rviz" pkg="rviz" type="rviz" args="-d $(find frontier_exploration)/config/rviz/gmapping.rviz" /> -->
-    <node name="rviz" pkg="rviz" type="rviz" args="-d $(find frontier_exploration)/config/rviz/cartographer.rviz" />
+    <node name="rviz" pkg="rviz" type="rviz" args="-d $(find frontier_exploration)/config/rviz/gmapping.rviz" />
+    <!-- <node name="rviz" pkg="rviz" type="rviz" args="-d $(find frontier_exploration)/config/rviz/cartographer.rviz" /> -->
 </launch>
