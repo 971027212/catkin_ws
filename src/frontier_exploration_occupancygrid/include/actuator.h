@@ -4,6 +4,7 @@
 #include <vector>
 #include <math.h>
 #include <tf/transform_listener.h>
+#include <tf/transform_datatypes.h>
 #include <move_base/move_base.h>
 #include <move_base_msgs/MoveBaseActionGoal.h>
 #include <actionlib/client/simple_action_client.h>
@@ -45,6 +46,7 @@ namespace Actuator{
             float GoalTolerance;   // Paramter: Abandon next goal close to explored point
             float ObstacleTolerance; // Paramter: Close to obstacle no rotate
             float RotateSpeed;
+	    double rotation_ctrl_rate_;
             long iteration;
 
             Header_param header;
@@ -55,6 +57,8 @@ namespace Actuator{
             visualization_msgs::Marker path_vis;
             nav_msgs::OccupancyGrid inflated_map;
             nav_msgs::OccupancyGrid raw_map;
+            std::vector<geometry_msgs::Point> exploration_path_;
+            bool summary_published_ = false;
 
             geometry_msgs::Twist RotSpeed;
             RobotPose robotPose;    // Robot current pose through TF
@@ -92,6 +96,8 @@ namespace Actuator{
             void VisInit(); // Marker Initialization
             void ActuatorInit();    // Initialization of all vars
             void AddToClose(geometry_msgs::Point& goal);    // Add current goal to the close_list set
+            void MarkGoalReached();
+            void PublishExplorationSummary();
             void centroidCallback(const frontier_exploration::PointArrayConstPtr& msg);
             // void inflatedmapCallback(const nav_msgs::OccupancyGridConstPtr& inflateMap);
             void mapCallback(const nav_msgs::OccupancyGridConstPtr& RawMap);    // Raw map CB

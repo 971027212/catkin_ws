@@ -40,6 +40,7 @@ This package provides an exploration strategy for single robot. However, for it 
 2. "/centroids": All centroids(PointArray)
 3. "/inflated_map": The Inflated map of raw map(nav_msgs::OccupancyGrid)
 4. "/move_base/goal": The current goal using move_base action(move_base_msgs::MoveBaseActionGoal)
+5. "/path_vis": A visualization marker that traces the sequence of explored goals once mapping is complete
 
 #### Parameters
 1. "obstacle_inflation": (float) inflation radius(meter)
@@ -48,7 +49,11 @@ This package provides an exploration strategy for single robot. However, for it 
 4. "robot_base_frame": (string) robot base frame_id
 5. "goal_tolerance": The tolerance for arriving current goal(meter)
 6. "obstacle_tolerance":if robot's distance to nearest obstacle less than this value, the robot won't rotate
-7. "rotate_speed": (float) the robot rotate speed
+7. "rotate_speed": (float) the robot rotate speed (default 1.0 rad/s for quicker reorientation)
+
+After the frontier list becomes empty the planner also publishes the `path_vis` marker, which can be displayed in RViz to
+evaluate how the robot covered the environment.
+
 ### 3.2. Setting up the navigation stack on the robots
 The ```move_base_node``` node, which brings up the navigation stack on the robot, must be running. This package generates target exploration goals, the robot must be able to receive these points and move. Additionally, each robot must have a global and local cost maps. All of these are proivded from the ```move_base_node```. 
 

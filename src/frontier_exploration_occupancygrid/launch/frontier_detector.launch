@@ -7,6 +7,6 @@
         <param name="robot_base_frame" value="base_link"/>
         <param name="goal_tolerance" value="1.0"/>
         <param name="obstacle_tolerance" value="1.0"/>
-        <param name="rotate_speed" value="0.2"/>
+        <param name="rotate_speed" value="1.0"/>
     </node>
 </launch>

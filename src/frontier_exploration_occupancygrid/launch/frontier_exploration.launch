@@ -8,7 +8,7 @@
    
     <!-- Open simulation environment -->
     <include file="$(find gazebo_ros)/launch/empty_world.launch">
-        <arg name="world_name" value="$(find frontier_exploration)/world/house.world"/>
+        <arg name="world_name" value="$(find frontier_exploration)/world/super_mall.world"/>
         <arg name="use_sim_time" value="true"/>
         <arg name="gui" value="false"/>
         <arg name="debug" value="false"/>
@@ -28,7 +28,7 @@
         <param name="robot_base_frame" value="base_link"/>
         <param name="goal_tolerance" value="0.3"/>
         <param name="obstacle_tolerance" value="0.5"/>
-        <param name="rotate_speed" value="0.5"/>
+        <param name="rotate_speed" value="1.0"/>
     </node>
 
     <include file="$(find frontier_exploration)/launch/move_gmapping.launch"/>

@@ -37,6 +37,7 @@ void Actuator::Actuator::Rotation(float angle){
     time_t initTime, currTime;
     time_t duration = 0L;
     time_t limitation = 15L;  // Rotation time within 15 second
+    ros::Rate rate(rotation_ctrl_rate_);
     time(&initTime);
 
     while((rotated_angle < angle) && (ros::ok()) && bool(duration<limitation)){
@@ -44,6 +45,7 @@ void Actuator::Actuator::Rotation(float angle){
         duration = currTime-initTime;
         double old_yaw = robotPose.Yaw;
         cmdPub.publish(RotSpeed);
+        rate.sleep();
         ObtainPose();
         ros::spinOnce();
         double dYaw = robotPose.Yaw - old_yaw;
@@ -52,6 +54,14 @@ void Actuator::Actuator::Rotation(float angle){
         }
         rotated_angle += dYaw;
     }
+    geometry_msgs::Twist stop_cmd;
+    stop_cmd.linear.x = 0.0;
+    stop_cmd.linear.y = 0.0;
+    stop_cmd.linear.z = 0.0;
+    stop_cmd.angular.x = 0.0;
+    stop_cmd.angular.y = 0.0;
+    stop_cmd.angular.z = 0.0;
+    cmdPub.publish(stop_cmd);
     duration = 0;
 }
 
@@ -66,8 +76,21 @@ void Actuator::Actuator::ReturnHome(){
 }
 
 void Actuator::Actuator::MoveToGoal(){
+    
+    ObtainPose();
+    header.stamp = ros::Time::now();
+    MoveGoal.target_pose.header.frame_id = header.frame_id;
+    MoveGoal.target_pose.header.stamp = header.stamp;
     // Movebase action method
     MoveGoal.target_pose.pose.position = Goal;
+    // Orient the robot so that it initially faces the next goal. This avoids the
+    // robot starting every trajectory facing the world x-axis which often causes
+    // the local planner to fight the heading error and results in the drifting
+    // behaviour that was observed when switching to a new goal.
+    const double yaw = atan2(Goal.y - robotPose.Position.y,
+                             Goal.x - robotPose.Position.x);
+    MoveGoal.target_pose.pose.orientation = tf::createQuaternionMsgFromYaw(yaw);
+
     ac.sendGoal(MoveGoal);
     if(ac.getState() == actionlib::SimpleClientGoalState::SUCCEEDED){
         cout << "Reached the goal!" << endl;
@@ -84,6 +107,21 @@ void Actuator::Actuator::Visualization(){
     goal_vis.publish(GoalMarker);
     home_vis.publish(HomeMarker);
 }
+
+void Actuator::Actuator::MarkGoalReached(){
+    exploration_path_.push_back(Goal);
+}
+
+void Actuator::Actuator::PublishExplorationSummary(){
+    if(summary_published_ || exploration_path_.size() < 2){
+        return;
+    }
+    path_vis.header.stamp = ros::Time::now();
+    path_vis.points = exploration_path_;
+    path_pub.publish(path_vis);
+    summary_published_ = true;
+}
+
 
 void Actuator::Actuator::VisInit(){
     //! Goal is pink
@@ -121,6 +159,22 @@ void Actuator::Actuator::VisInit(){
     HomeMarker.scale.z=0.3;
     HomeMarker.pose.orientation.w=1.0;
     HomeMarker.points.clear();
+
+
+    path_vis.header.frame_id = header.frame_id;
+    path_vis.header.stamp = header.stamp;
+    path_vis.ns = "exploration_path";
+    path_vis.id = 6;
+    path_vis.lifetime = ros::Duration();
+    path_vis.type = visualization_msgs::Marker::LINE_STRIP;
+    path_vis.action = visualization_msgs::Marker::ADD;
+    path_vis.pose.orientation.w = 1.0;
+    path_vis.scale.x = 0.05;
+    path_vis.color.a = 1.0;
+    path_vis.color.r = 0.0;
+    path_vis.color.g = 0.6;
+    path_vis.color.b = 1.0;
+    path_vis.points.clear();
 }
 
 void Actuator::Actuator::ObtainPose(){
@@ -162,7 +216,8 @@ void Actuator::Actuator::ActuatorInit(){
     ros::param::param<std::string>("~/robot_base_frame",RobotBase,base_frame);
     ros::param::param<float>("~/goal_tolerance",GoalTolerance,0.2);        // m
     ros::param::param<float>("~/obstacle_tolerance",ObstacleTolerance,0.5);  // m
-    ros::param::param<float>("~/rotate_speed",RotateSpeed,0.5);  // m
+    ros::param::param<float>("~/rotate_speed",RotateSpeed,1.0);  // rad/s
+    ros::param::param<double>("~/rotation_control_rate",rotation_ctrl_rate_,30.0);
 
     iteration = 0;
     GoHomeFlag = 0;
@@ -175,8 +230,9 @@ void Actuator::Actuator::ActuatorInit(){
     RotSpeed.angular.y = 0.0;
     RotSpeed.angular.z = RotateSpeed;
     
-    // MoveGoal.target_pose.header.frame_id = header.frame_id;
-    MoveGoal.target_pose.header.frame_id = "inflated_map";
+    //MoveGoal.target_pose.header.frame_id = header.frame_id;
+    //MoveGoal.target_pose.header.frame_id = "inflated_map";
+    MoveGoal.target_pose.header.frame_id = header.frame_id;
     MoveGoal.target_pose.header.stamp = header.stamp;
     MoveGoal.target_pose.pose.position.z = 0.0;
     MoveGoal.target_pose.pose.orientation.w = 1.0;
@@ -269,6 +325,9 @@ ac("move_base",true)
     ObtainPose();
     Home = robotPose.Position;
     Goal = Home;
+    summary_published_ = false;
+    exploration_path_.clear();
+    exploration_path_.push_back(Home);
     cout << "Home pose: " << Home.x << "," << Home.y << endl;
     cmdPub=nh.advertise<geometry_msgs::Twist>(CmdTopic,1000);
 }

@@ -48,10 +48,12 @@ int main (int argc, char **argv){
         actuator.AddToClose(actuator.Goal); // Add to closeList for avoiding go to the explored goal
         if(changeFlag != 1 && Duration < Limit){
             std::cout << "Reached the goal!" << std::endl; actuator.Rotation(0.0);
+            actuator.MarkGoalReached();
             }
         else{changeFlag = 0;}
         
         if(frontier_detector.frontier.size()==0 || actuator.GoHomeFlag==1){ // For homing
+            actuator.PublishExplorationSummary();            
             actuator.ReturnHome();
             while(nh.ok() && actuator.ac.getState() != actionlib::SimpleClientGoalState::SUCCEEDED){
                 std::cout << "Exploration finished! Returning home.." << std::endl;
