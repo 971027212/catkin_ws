@@ -79,6 +79,11 @@ The exploration action will start at launching node. In addition, you can change
   $ rosrun frontier_exploration plot_curves.py /tmp/frontier_metrics.csv --output ~/exploration_curves.png
   ```
   这条命令会自动定位 `plot_curves.py`，然后在用户目录生成 PNG。也可以把 CSV/PNG 的路径替换成你自己的文件。
+- 如果你有多份 metrics（例如 level0~3），可以把它们放在同一条命令里，曲线会叠加在同一组坐标轴上，方便对比：
+  ```sh
+  $ rosrun frontier_exploration plot_curves.py /tmp/metrics_L0.csv /tmp/metrics_L1.csv /tmp/metrics_L2.csv --output ~/all_levels.png
+  ```
+  legend 会使用文件名（不含扩展名）来区分不同曲线。
 
 如果你更喜欢手动定位脚本，可以先运行 `roscd frontier_exploration` 再执行 `python3 scripts/plot_curves.py ...`，这样就不会再遇到「路径不存在」的错误。
 
