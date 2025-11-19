@@ -3,6 +3,9 @@
 #include <ros/ros.h>
 #include <vector>
 #include <math.h>
+#include <unordered_set>
+#include <limits>
+#include <algorithm>
 #include <tf/transform_listener.h>
 #include <tf/transform_datatypes.h>
 #include <move_base/move_base.h>
@@ -13,6 +16,8 @@
 #include "geometry_msgs/PointStamped.h"
 #include "std_msgs/Header.h"
 #include "nav_msgs/MapMetaData.h"
+#include "nav_msgs/Path.h"
+#include "nav_msgs/GetPlan.h"
 #include "geometry_msgs/Point.h"
 #include "visualization_msgs/Marker.h"
 #include "visualization_msgs/MarkerArray.h"
@@ -75,6 +80,20 @@ namespace Actuator{
             ros::Subscriber InflatedMapSub_;
             ros::Subscriber RawMapSub_;
             tf::TransformListener PoseListner;
+            ros::ServiceClient make_plan_client;
+
+            double alpha_gain_;
+            double gamma_uncertainty_;
+            double delta_loop_;
+            double beta_cost_;
+            double info_radius_;
+            double info_angle_step_deg_;
+            double plan_tolerance_;
+
+            nav_msgs::Path last_plan_;
+            double last_plan_length_;
+
+            bool worldToMap(double wx, double wy, int& mx, int& my) const;
 
         public:
             MoveBaseClient ac;
@@ -85,7 +104,12 @@ namespace Actuator{
             Actuator(ros::NodeHandle& nh);
             Actuator();
             ~Actuator();
-            
+
+            struct InfoMetrics{
+                double gain;
+                double uncertainty;
+            };
+
             geometry_msgs::Point SelectGoal(std::vector<geometry_msgs::Point>& centroids);
             void ObtainPose();  // Obtain robot current pose and yaw
             void MoveToGoal();  // Going to the given goal through action
@@ -102,7 +126,14 @@ namespace Actuator{
             // void inflatedmapCallback(const nav_msgs::OccupancyGridConstPtr& inflateMap);
             void mapCallback(const nav_msgs::OccupancyGridConstPtr& RawMap);    // Raw map CB
 
-            int CheckCollision(const nav_msgs::OccupancyGrid& map, 
+            InfoMetrics computeInfoAndUncertainty(const geometry_msgs::Point& viewpoint);
+            double computePathCost(const geometry_msgs::Point& viewpoint, nav_msgs::Path& plan);
+            double computeLoopScore(const nav_msgs::Path& plan) const;
+
+            double GetLastPlanLength() const { return last_plan_length_; }
+            const nav_msgs::Path& GetLastPlan() const { return last_plan_; }
+
+            int CheckCollision(const nav_msgs::OccupancyGrid& map,
                                        geometry_msgs::Point& start, geometry_msgs::Point& end); // Lazy collision checking method
 
     };

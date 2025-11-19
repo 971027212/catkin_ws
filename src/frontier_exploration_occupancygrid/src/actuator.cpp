@@ -1,5 +1,8 @@
 #include <time.h>
+#include <cmath>
 #include <math.h>
+#include <limits>
+#include <algorithm>
 #include "actuator.h"
 
 using namespace std;
@@ -11,6 +14,152 @@ void Actuator::Actuator::centroidCallback(const frontier_exploration::PointArray
 
 void Actuator::Actuator::mapCallback(const nav_msgs::OccupancyGridConstPtr& RawMap){
     raw_map = *RawMap;
+}
+
+bool Actuator::Actuator::worldToMap(double wx, double wy, int& mx, int& my) const{
+    if(raw_map.info.resolution <= 0.0 || raw_map.data.empty()){
+        return false;
+    }
+    const double origin_x = raw_map.info.origin.position.x;
+    const double origin_y = raw_map.info.origin.position.y;
+    mx = static_cast<int>((wx - origin_x)/raw_map.info.resolution);
+    my = static_cast<int>((wy - origin_y)/raw_map.info.resolution);
+    if(mx < 0 || my < 0){
+        return false;
+    }
+    const int width = static_cast<int>(raw_map.info.width);
+    const int height = static_cast<int>(raw_map.info.height);
+    if(mx >= width || my >= height){
+        return false;
+    }
+    return true;
+}
+
+Actuator::Actuator::InfoMetrics Actuator::Actuator::computeInfoAndUncertainty(const geometry_msgs::Point& viewpoint){
+    InfoMetrics metrics{0.0, 0.0};
+    if(raw_map.data.empty() || info_radius_ <= 0.0){
+        return metrics;
+    }
+    const double angle_increment = info_angle_step_deg_ * PI / 180.0;
+    if(angle_increment <= 0.0){
+        return metrics;
+    }
+    const double max_range = info_radius_;
+    const double step = std::max(raw_map.info.resolution, 0.01f);
+    const int width = static_cast<int>(raw_map.info.width);
+    std::unordered_set<int> visited;
+    double variance_sum = 0.0;
+    size_t variance_samples = 0;
+
+    for(double angle = 0.0; angle < 2 * PI; angle += angle_increment){
+        double ray_length = 0.0;
+        while(ray_length <= max_range){
+            const double wx = viewpoint.x + ray_length * cos(angle);
+            const double wy = viewpoint.y + ray_length * sin(angle);
+            int mx = 0;
+            int my = 0;
+            if(!worldToMap(wx, wy, mx, my)){
+                break;
+            }
+            const int idx = my * width + mx;
+            if(!visited.insert(idx).second){
+                // already considered in previous ray
+                ray_length += step;
+                continue;
+            }
+            const int8_t value = raw_map.data[idx];
+            double probability = 0.5; // unknown cell
+            if(value >= 0){
+                probability = static_cast<double>(value) / 100.0;
+            }
+            variance_sum += probability * (1.0 - probability);
+            variance_samples++;
+            if(value == -1){
+                metrics.gain += 1.0;
+            }
+            if(value >= 65){
+                break; // obstacle encountered
+            }
+            ray_length += step;
+        }
+    }
+    if(variance_samples > 0){
+        metrics.uncertainty = variance_sum / static_cast<double>(variance_samples);
+    }
+    return metrics;
+}
+
+double Actuator::Actuator::computePathCost(const geometry_msgs::Point& viewpoint,
+                                           nav_msgs::Path& plan)
+{
+    if (make_plan_client.exists()) {
+        nav_msgs::GetPlan srv;
+        srv.request.start.header.frame_id = header.frame_id;
+        srv.request.start.header.stamp = ros::Time::now();
+        srv.request.start.pose.position = robotPose.Position;
+        const double yaw_rad = robotPose.Yaw * PI / 180.0;
+        srv.request.start.pose.orientation = tf::createQuaternionMsgFromYaw(yaw_rad);
+
+        srv.request.goal = srv.request.start;
+        srv.request.goal.pose.position = viewpoint;
+        srv.request.tolerance = plan_tolerance_;
+
+        if (make_plan_client.call(srv) && !srv.response.plan.poses.empty()) {
+            plan = srv.response.plan;
+
+            double cost = 0.0;
+            for (size_t i = 1; i < plan.poses.size(); ++i) {
+                const geometry_msgs::Point& prev = plan.poses[i-1].pose.position;
+                const geometry_msgs::Point& curr = plan.poses[i].pose.position;
+                cost += hypot(curr.x - prev.x, curr.y - prev.y);
+            }
+            return cost;
+        }
+    }
+
+    plan.poses.clear();
+
+    double cost = hypot(viewpoint.x - robotPose.Position.x,
+                        viewpoint.y - robotPose.Position.y);
+
+    geometry_msgs::Point start = robotPose.Position;
+    geometry_msgs::Point end = viewpoint;
+    int collision = CheckCollision(raw_map, start, end);
+    auto sigmoid = [collision](){
+        return 2.0 / (1.0 + std::exp(-0.3 * collision)) - 1.0;
+    };
+    cost = cost * (1.0 + sigmoid());
+
+    return cost;
+}
+       
+
+double Actuator::Actuator::computeLoopScore(const nav_msgs::Path& plan) const{
+    if(plan.poses.empty() || raw_map.data.empty()){
+        return 0.0;
+    }
+    size_t known_cells = 0;
+    size_t total_cells = 0;
+    const int width = static_cast<int>(raw_map.info.width);
+    for(const auto& pose_stamped : plan.poses){
+        int mx = 0;
+        int my = 0;
+        if(!worldToMap(pose_stamped.pose.position.x, pose_stamped.pose.position.y, mx, my)){
+            continue;
+        }
+        const int idx = my * width + mx;
+        if(idx < 0 || idx >= static_cast<int>(raw_map.data.size())){
+            continue;
+        }
+        total_cells++;
+        if(raw_map.data[idx] != -1){
+            known_cells++;
+        }
+    }
+    if(total_cells == 0){
+        return 0.0;
+    }
+    return static_cast<double>(known_cells) / static_cast<double>(total_cells);
 }
 
 void Actuator::Actuator::Rotation(float angle){
@@ -218,6 +367,13 @@ void Actuator::Actuator::ActuatorInit(){
     ros::param::param<float>("~/obstacle_tolerance",ObstacleTolerance,0.5);  // m
     ros::param::param<float>("~/rotate_speed",RotateSpeed,1.0);  // rad/s
     ros::param::param<double>("~/rotation_control_rate",rotation_ctrl_rate_,30.0);
+    ros::param::param<double>("~/alpha_gain",alpha_gain_,0.0);
+    ros::param::param<double>("~/gamma_uncertainty",gamma_uncertainty_,0.0);
+    ros::param::param<double>("~/delta_loop",delta_loop_,0.0);
+    ros::param::param<double>("~/beta_cost",beta_cost_,1.0);
+    ros::param::param<double>("~/info_radius",info_radius_,3.0);
+    ros::param::param<double>("~/info_angle_step_deg",info_angle_step_deg_,5.0);
+    ros::param::param<double>("~/plan_tolerance",plan_tolerance_,0.05);
 
     iteration = 0;
     GoHomeFlag = 0;
@@ -236,6 +392,10 @@ void Actuator::Actuator::ActuatorInit(){
     MoveGoal.target_pose.header.stamp = header.stamp;
     MoveGoal.target_pose.pose.position.z = 0.0;
     MoveGoal.target_pose.pose.orientation.w = 1.0;
+
+    last_plan_length_ = 0.0;
+    last_plan_.poses.clear();
+    last_plan_.header.frame_id = header.frame_id;
 }
 
 void Actuator::Actuator::AddToClose(geometry_msgs::Point& goal){
@@ -247,43 +407,108 @@ void Actuator::Actuator::AddToClose(geometry_msgs::Point& goal){
 
 geometry_msgs::Point Actuator::Actuator::SelectGoal(std::vector<geometry_msgs::Point>& centroids){
     ObtainPose();
-    int index;
-    int count = 0;  // For ensure whether all centroids are in GoalClose
-    double shortest=10000;
-    double temp;
-    if(centroids.size()==0){cout << "No centroids!  No goal!" << endl;return Home;}
-    else{
-        for(int i=0;i<centroids.size();i++){
-            if(GoalClose.size() != 0){
-                for(int n=0;n<GoalClose.size();n++){
-                    float Distance = sqrt(pow((centroids[i].x-GoalClose[n].x),2)+pow((centroids[i].y-GoalClose[n].y),2));
-                    if(Distance < GoalTolerance && Distance > 0.0001){
-                        GoalClose.push_back(centroids[i]);  // Abandon centroid close to explored goal
-                        break;
-                    }
+    struct Candidate{
+        geometry_msgs::Point point;
+        double gain;
+        double uncertainty;
+        double loop;
+        double cost;
+        nav_msgs::Path path;
+    };
+    std::vector<Candidate> candidates;
+    const size_t total_centroids = centroids.size();
+    if(total_centroids == 0){
+        cout << "No centroids!  No goal!" << endl;
+        GoHomeFlag = 1;
+        return Home;
+    }
+    size_t close_count = 0;
+    for(size_t i=0;i<centroids.size();i++){
+        if(!GoalClose.empty()){
+            for(size_t n=0;n<GoalClose.size();n++){
+                float Distance = sqrt(pow((centroids[i].x-GoalClose[n].x),2)+pow((centroids[i].y-GoalClose[n].y),2));
+                if(Distance < GoalTolerance && Distance > 0.0001){
+                    GoalClose.push_back(centroids[i]);
+                    break;
                 }
-                // Abandon explored goal
-                if(find(GoalClose.begin(),GoalClose.end(),centroids[i])!=GoalClose.end()){count++;continue;}
             }
-            
-            temp = sqrt(pow((robotPose.Position.x-centroids[i].x),2)+pow((robotPose.Position.y-centroids[i].y),2));
-            int collision = CheckCollision(raw_map,robotPose.Position,centroids[i]); // Collision times
-            auto sigmoid = [collision]{return 2/(1+exp(-0.3*collision))-1;}; // Add obstacle punishment factor 
-            temp = temp * (1+sigmoid()); // Cost function. The shorest goal are priored
-            if(temp < shortest){
-                shortest = temp;
-                index = i;
+            if(find(GoalClose.begin(),GoalClose.end(),centroids[i])!=GoalClose.end()){
+                close_count++;
+                continue;
             }
         }
-        if(count == centroids.size()){GoHomeFlag = 1;return Home;} // Go home
-        cout << "GoalClose List size: " << GoalClose.size() << endl;
-        Goal = centroids[index];
-        iteration++;
-        cout << "/************************/" << endl;
-        cout << "Iteration: " << iteration << ": \nGoal: "
-            << Goal.x << "," << Goal.y << "\nDistance: " << shortest << endl;
-        return Goal;
+        nav_msgs::Path plan;
+        const InfoMetrics info_metrics = computeInfoAndUncertainty(centroids[i]);
+        const double cost = computePathCost(centroids[i], plan);
+        if(!std::isfinite(cost)){
+            continue;
+        }
+        const double loop = computeLoopScore(plan);
+        candidates.push_back({centroids[i], info_metrics.gain, info_metrics.uncertainty, loop, cost, plan});
     }
+
+    if(close_count == total_centroids || candidates.empty()){
+        GoHomeFlag = 1;
+        return Home;
+    }
+
+    double min_gain = std::numeric_limits<double>::max();
+    double max_gain = std::numeric_limits<double>::lowest();
+    double min_uncertainty = std::numeric_limits<double>::max();
+    double max_uncertainty = std::numeric_limits<double>::lowest();
+    double min_loop = std::numeric_limits<double>::max();
+    double max_loop = std::numeric_limits<double>::lowest();
+    double min_cost = std::numeric_limits<double>::max();
+    double max_cost = std::numeric_limits<double>::lowest();
+
+    for(const auto& candidate : candidates){
+        min_gain = std::min(min_gain, candidate.gain);
+        max_gain = std::max(max_gain, candidate.gain);
+        min_uncertainty = std::min(min_uncertainty, candidate.uncertainty);
+        max_uncertainty = std::max(max_uncertainty, candidate.uncertainty);
+        min_loop = std::min(min_loop, candidate.loop);
+        max_loop = std::max(max_loop, candidate.loop);
+        min_cost = std::min(min_cost, candidate.cost);
+        max_cost = std::max(max_cost, candidate.cost);
+    }
+
+    auto normalize = [](double value, double min_value, double max_value){
+        if(!std::isfinite(value) || (max_value - min_value) <= 1e-6){
+            return 0.0;
+        }
+        return (value - min_value) / (max_value - min_value);
+    };
+
+    double best_utility = -std::numeric_limits<double>::infinity();
+    Candidate best_candidate = candidates.front();
+    for(const auto& candidate : candidates){
+        const double gain_norm = normalize(candidate.gain, min_gain, max_gain);
+        const double uncertainty_norm = normalize(candidate.uncertainty, min_uncertainty, max_uncertainty);
+        const double loop_norm = normalize(candidate.loop, min_loop, max_loop);
+        const double cost_norm = normalize(candidate.cost, min_cost, max_cost);
+        const double utility = alpha_gain_ * gain_norm +
+                               gamma_uncertainty_ * uncertainty_norm +
+                               delta_loop_ * loop_norm -
+                               beta_cost_ * cost_norm;
+        if(utility > best_utility){
+            best_utility = utility;
+            best_candidate = candidate;
+        }
+    }
+
+    cout << "GoalClose List size: " << GoalClose.size() << endl;
+    Goal = best_candidate.point;
+    last_plan_ = best_candidate.path;
+    last_plan_length_ = best_candidate.cost;
+    iteration++;
+    cout << "/************************/" << endl;
+    cout << "Iteration: " << iteration << ": \nGoal: "
+        << Goal.x << "," << Goal.y << "\nUtility: " << best_utility
+        << "\nGain: " << best_candidate.gain
+        << "\nUncertainty: " << best_candidate.uncertainty
+        << "\nLoop score: " << best_candidate.loop
+        << "\nCost: " << best_candidate.cost << endl;
+    return Goal;
 }
 
 int Actuator::Actuator::CheckCollision(const nav_msgs::OccupancyGrid& map, 
@@ -330,6 +555,8 @@ ac("move_base",true)
     exploration_path_.push_back(Home);
     cout << "Home pose: " << Home.x << "," << Home.y << endl;
     cmdPub=nh.advertise<geometry_msgs::Twist>(CmdTopic,1000);
+    make_plan_client = nh.serviceClient<nav_msgs::GetPlan>("/move_base/make_plan");
+    make_plan_client.waitForExistence(ros::Duration(5.0));
 }
 
 Actuator::Actuator::~Actuator(){

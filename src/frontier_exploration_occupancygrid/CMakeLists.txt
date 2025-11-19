@@ -60,3 +60,8 @@ target_link_libraries(frontier_planner
 
 add_dependencies(frontierDetector ${PROJECT_NAME}_generate_messages_cpp)
 add_dependencies(frontier_planner ${PROJECT_NAME}_generate_messages_cpp)
+
+catkin_install_python(
+  PROGRAMS scripts/plot_curves.py
+  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)

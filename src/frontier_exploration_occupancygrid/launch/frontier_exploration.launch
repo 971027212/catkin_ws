@@ -4,6 +4,17 @@
     <arg name="y_pos" default="0.0"/>
     <arg name="z_pos" default="0.0"/>
     <param name="use_sim_time" value="true"/>
+    <!-- Level presets:
+         Level 1 -> alpha_gain=1.0 gamma_uncertainty=0.0 delta_loop=0.0 beta_cost=1.0
+         Level 2 -> alpha_gain=1.0 gamma_uncertainty=1.0 delta_loop=0.0 beta_cost=1.0
+         Level 3 -> alpha_gain=1.0 gamma_uncertainty=1.0 delta_loop=0.5 beta_cost=1.0 -->
+    <arg name="alpha_gain" default="1.0"/>
+    <arg name="gamma_uncertainty" default="0.0"/>
+    <arg name="delta_loop" default="0.0"/>
+    <arg name="beta_cost" default="1.0"/>
+    <arg name="coverage_threshold" default="0.9"/>
+    <arg name="max_iterations" default="500"/>
+    <arg name="metrics_output_path" default="/tmp/frontier_metrics.csv"/>
     <node pkg="tf" type="static_transform_publisher" name="map2inflated" args="0 0 0 0 0 0  /map /inflated_map 100"/>
    
     <!-- Open simulation environment -->
@@ -29,6 +40,13 @@
         <param name="goal_tolerance" value="0.3"/>
         <param name="obstacle_tolerance" value="0.5"/>
         <param name="rotate_speed" value="1.0"/>
+        <param name="alpha_gain" value="$(arg alpha_gain)"/>
+        <param name="gamma_uncertainty" value="$(arg gamma_uncertainty)"/>
+        <param name="delta_loop" value="$(arg delta_loop)"/>
+        <param name="beta_cost" value="$(arg beta_cost)"/>
+        <param name="coverage_threshold" value="$(arg coverage_threshold)"/>
+        <param name="max_iterations" value="$(arg max_iterations)"/>
+        <param name="metrics_output_path" value="$(arg metrics_output_path)"/>
     </node>
 
     <include file="$(find frontier_exploration)/launch/move_gmapping.launch"/>

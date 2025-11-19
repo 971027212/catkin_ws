@@ -72,6 +72,16 @@ $ roslaunch frontier_exploration frontier_exploration.launch
 ```
 The exploration action will start at launching node. In addition, you can change different gazebo world in world dir.
 
+### 3. Exporting the exploration metrics and curves
+- 每次移动后都会把覆盖率和累计路径长度写入 CSV，默认路径为 `/tmp/frontier_metrics.csv`，可以通过 `metrics_output_path` 参数（或 launch 文件中的 arg）改到别的目录。
+- 生成曲线时不需要知道源码所在的绝对路径，直接使用 `rosrun`：
+  ```sh
+  $ rosrun frontier_exploration plot_curves.py /tmp/frontier_metrics.csv --output ~/exploration_curves.png
+  ```
+  这条命令会自动定位 `plot_curves.py`，然后在用户目录生成 PNG。也可以把 CSV/PNG 的路径替换成你自己的文件。
+
+如果你更喜欢手动定位脚本，可以先运行 `roscd frontier_exploration` 再执行 `python3 scripts/plot_curves.py ...`，这样就不会再遇到「路径不存在」的错误。
+
 ## 5. Video and Paper citation
 [Youtube Video](https://www.youtube.com/watch?v=yTYMJIM6Itw)
 
