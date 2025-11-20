@@ -52,6 +52,8 @@ void WriteMetricsToCsv(const std::string& path,
     ROS_INFO("Saved exploration metrics to %s", path.c_str());
 }
 
+
+
 } // namespace
 
 int main (int argc, char **argv){
@@ -156,13 +158,15 @@ int main (int argc, char **argv){
         if(frontier_detector.frontier.size() == 0 || actuator.GoHomeFlag == 1){
             actuator.PublishExplorationSummary();
             actuator.ReturnHome();
-            while(nh.ok() &&
-                  actuator.ac.getState() != actionlib::SimpleClientGoalState::SUCCEEDED){
+            while(nh.ok() && actuator.ac.getState() != actionlib::SimpleClientGoalState::SUCCEEDED){
+
                 std::cout << "Exploration finished! Returning home.." << std::endl;
                 ros::Duration(5).sleep();
                 ros::spinOnce();
             }
+
             nh.shutdown();
+
         }
     }
 
