@@ -171,6 +171,8 @@ int main (int argc, char **argv){
             }
             const int iteration_id = static_cast<int>(metrics_history.size()) + 1;
             metrics_history.push_back({iteration_id, coverage, cumulative_distance});
+            
+            WriteMetricsToCsv(metrics_output_path, metrics_history);
 
             ROS_INFO("Iteration %d - coverage %.3f, cumulative distance %.3f",
                      iteration_id, coverage, cumulative_distance);
@@ -191,7 +193,7 @@ int main (int argc, char **argv){
         // For homing
         frontier_detector.ComputeCentroids(frontier_detector.inflated_map,
                                            frontier_detector.frontier);
-        if(frontier_detector.frontier.size() == 0 || actuator.GoHomeFlag == 1){
+        if(frontier_detector.frontier.size() == 0 && actuator.GoHomeFlag == 1){
             actuator.PublishExplorationSummary();
             actuator.ReturnHome();
             while(nh.ok() && actuator.ac.getState() != actionlib::SimpleClientGoalState::SUCCEEDED){
@@ -206,8 +208,7 @@ int main (int argc, char **argv){
         }
     }
 
-    // 写出探索指标 CSV
-    WriteMetricsToCsv(metrics_output_path, metrics_history);
+
 
     return 0;
 }
