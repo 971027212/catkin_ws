@@ -5,7 +5,9 @@
 #include <iomanip>
 #include <string>
 #include <cmath>
+#include <algorithm>
 
+#include <nav_msgs/OccupancyGrid.h>
 #include "frontier_detector.h"
 #include "actuator.h"
 
@@ -21,21 +23,47 @@ double ComputeCoverage(const nav_msgs::OccupancyGrid& map){
     if(map.data.empty()){
         return 0.0;
     }
+    const int width = map.info.width;
+    const int height = map.info.height;
+
+    int min_x = width;
+    int max_x = -1;
+    int min_y = height;
+    int max_y = -1;
+
+    for(int idx = 0; idx < static_cast<int>(map.data.size()); ++idx){
+        if(map.data[idx] == -1){
+            continue;
+        }
+        const int x = idx % width;
+        const int y = idx / width;
+        min_x = std::min(min_x, x);
+        max_x = std::max(max_x, x);
+        min_y = std::min(min_y, y);
+        max_y = std::max(max_y, y);
+    }
+
+    // No known cells in the map yet
+    if(max_x < 0 || max_y < 0){
+        return 0.0;
+    }
     double known = 0.0;
-    for(const auto cell : map.data){
-        if(cell != -1){
-            known += 1.0;
+    double total = 0.0;
+    for(int y = min_y; y <= max_y; ++y){
+        for(int x = min_x; x <= max_x; ++x){
+            const int idx = y * width + x;
+            if(map.data[idx] != -1){
+                known += 1.0;
+            }
+            total += 1.0;
         }
     }
-    return known / static_cast<double>(map.data.size());
+    return (total > 0.0) ? (known / total) : 0.0;
 }
 
 void WriteMetricsToCsv(const std::string& path,
                        const std::vector<ExplorationSample>& history){
-    if(history.empty()){
-        ROS_WARN("No exploration metrics collected, skip writing CSV.");
-        return;
-    }
+
     std::ofstream ofs(path.c_str());
     if(!ofs.is_open()){
         ROS_ERROR("Failed to open metrics output path: %s", path.c_str());
@@ -132,6 +160,9 @@ int main (int argc, char **argv){
             actuator.Rotation(0.0);
             actuator.MarkGoalReached();
 
+            frontier_detector.ComputeCentroids(frontier_detector.inflated_map,
+                                               frontier_detector.frontier);
+
             // ---- Active-SLAM: 记录覆盖率与路径长度 ----
             double coverage = ComputeCoverage(frontier_detector.inflated_map);
             const double path_length = actuator.GetLastPlanLength();
@@ -140,12 +171,15 @@ int main (int argc, char **argv){
             }
             const int iteration_id = static_cast<int>(metrics_history.size()) + 1;
             metrics_history.push_back({iteration_id, coverage, cumulative_distance});
-            WriteMetricsToCsv(metrics_output_path, metrics_history);
+
             ROS_INFO("Iteration %d - coverage %.3f, cumulative distance %.3f",
                      iteration_id, coverage, cumulative_distance);
 
             // 终止条件：覆盖率或迭代次数
-            if((coverage_threshold > 0.0 && coverage >= coverage_threshold) ||
+            const bool reached_coverage =
+                (coverage_threshold > 0.0 && coverage >= coverage_threshold &&
+                 frontier_detector.frontier.empty());
+            if(reached_coverage ||
                (max_iterations > 0 && iteration_id >= max_iterations)){
                 actuator.GoHomeFlag = 1;
             }
@@ -155,6 +189,8 @@ int main (int argc, char **argv){
         }
 
         // For homing
+        frontier_detector.ComputeCentroids(frontier_detector.inflated_map,
+                                           frontier_detector.frontier);
         if(frontier_detector.frontier.size() == 0 || actuator.GoHomeFlag == 1){
             actuator.PublishExplorationSummary();
             actuator.ReturnHome();
