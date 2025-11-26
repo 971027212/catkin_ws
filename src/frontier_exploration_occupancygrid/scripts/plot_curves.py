@@ -65,8 +65,8 @@ def plot_curves(
         color = color_cycle[idx % len(color_cycle)] if color_cycle else None
         label = labels[idx] if labels is not None else csv_path.stem
 
-        ax_cov.plot(iterations, coverage, marker="o", label=label, color=color)
-        ax_dist.plot(iterations, distance, marker="o", label=label, color=color)
+        ax_cov.plot(iterations, coverage, marker="o", markersize=4,label=label, color=color)
+        ax_dist.plot(iterations, distance, marker="o", markersize=4,label=label, color=color)
 
     # 覆盖率子图设置
     ax_cov.set_ylabel("Coverage")
